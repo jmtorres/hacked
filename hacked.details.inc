@@ -31,11 +31,11 @@ function theme_hacked_detailed_report($projects) {
           break;
         case HACKED_STATUS_DELETED:
           $class = 'error';
-          $icon = theme('image', 'misc/watchdog-error.png', t('Changed'), t('Changed'));
+          $icon = theme('image', 'misc/watchdog-error.png', t('Deleted'), t('Deleted'));
           break;
         case HACKED_STATUS_HACKED:
           $class = 'warning';
-          $icon = theme('image', 'misc/watchdog-warning.png', t('Deleted'), t('Deleted'));
+          $icon = theme('image', 'misc/watchdog-warning.png', t('Changed'), t('Changed'));
           break;
         case HACKED_STATUS_PERMISSION_DENIED:
           $class = 'warning';
