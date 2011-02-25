@@ -1,6 +1,5 @@
 <?php
 
-// $Id$
 
 function hacked_reports_export_select() {
   global $user;

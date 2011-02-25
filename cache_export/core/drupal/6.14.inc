@@ -1,5 +1,4 @@
 <?php
-// $Id$
 
 $hashes = array (
   'themes/pushbutton/arrow-next-hover-rtl.png' => 'da337e67d0ac41e46708e42862e83fc293aee768',
