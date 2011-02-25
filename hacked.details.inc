@@ -1,6 +1,5 @@
 <?php
 
-// $Id$
 
 function hacked_reports_hacked_details($project) {
   $short_name = $project['short_name'];
