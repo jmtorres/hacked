@@ -465,7 +465,7 @@ function hacked_scan_directory_generate_hashes($directory, $cache = FALSE) {
   }
 
   $hashes = array();
-  $files = hacked_file_scan_directory($directory, '.*', array('.', '..', 'CVS', '.svn', '.git'));
+  $files = hacked_file_scan_directory($directory, '/.*/', array('.', '..', 'CVS', '.svn', '.git'));
   foreach ($files as $file) {
     $filename = str_replace($directory . '/', '', $file->filename);
     // Check the timestamp if available:
