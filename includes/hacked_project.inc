@@ -52,7 +52,7 @@ class hackedProject {
    *
    * We leverage the update (status) module to get the data we require about
    * projects. We just pull the information in, and make descisions about this
-   * project being from CVS or not.
+   * project being from GIT or not.
    */
   function identify_project() {
     // Only do this once, no matter how many times we're called.
@@ -65,7 +65,7 @@ class hackedProject {
     $available = update_get_available(TRUE);
     $data = update_calculate_project_data($available);
     $releases = _update_get_cached_available_releases();
-
+    
     foreach ($data as $key => $project) {
       if ($key == $this->name) {
         $this->project_info = $project;
@@ -82,7 +82,15 @@ class hackedProject {
         // http://drupal.org/node/669554
 
         // Find an item that this project includes:
-        if (hacked_cvs_enabled()) {
+        if (hacked_git_enabled()) {
+          foreach ($project['includes'] as $name => $title) {
+            if (is_dir(drupal_get_path($project['project_type'], $name) . '/.git')) {
+              $this->remote_files_downloader = new hackedProjectWebGITDownloader($this, drupal_get_filename($project['project_type'], $name));
+              break;
+            }
+          }
+        }
+        elseif (hacked_cvs_enabled()) {
           foreach ($project['includes'] as $name => $title) {
             if (is_dir(drupal_get_path($project['project_type'], $name) . '/CVS')) {
               $this->remote_files_downloader = new hackedProjectWebCVSDownloader($this, drupal_get_filename($project['project_type'], $name));
@@ -572,6 +580,142 @@ class hackedProjectWebFilesDownloader extends hackedProjectWebDownloader {
   }
 
 
+}
+
+/**
+ * Downloads a project using GIT.
+ */
+class hackedProjectWebGITDownloader extends hackedProjectWebDownloader {
+
+  var $base_filename = '';
+
+  function hackedProjectWebGITDownloader(&$project, $base_filename) {
+    parent::hackedProjectWebDownloader($project);
+    $this->base_filename = $base_filename;
+  }
+
+  /**
+   * Get information about the GIT location of the project.
+   */
+  function download_link() {
+    $info = array();
+    $pinfo = &$this->project->project_info;
+    // Special handling for core.
+    if ($pinfo['project_type'] == 'core') {
+      $info['giturl'] = 'http://git.drupal.org/project/' . $pinfo['name'] . '.git';
+      $info['module'] = 'drupal';
+      $info['checkout_folder'] = $pinfo['name'] . '-' . $pinfo['info']['version'];
+      $info['tag'] = $this->git_deploy_get_tag($this->base_filename);
+      $info['branch'] = $this->git_deploy_get_branch($this->base_filename);
+    }
+    else {
+      $info['giturl'] = 'http://git.drupal.org/project/' . $pinfo['name'] . '.git';
+      $info['module'] = $pinfo['name'];
+      $info['checkout_folder'] = $pinfo['name'];
+      $info['tag'] = $this->git_deploy_get_tag($this->base_filename);
+      $info['branch'] = $this->git_deploy_get_branch($this->base_filename);
+    }
+
+    return $info;
+  }
+  
+  /**
+   * Get the Git branch the repo is currently on
+   */
+  function git_deploy_get_branch($file) {
+    $proj_dir = dirname($file);
+    if (is_dir($proj_dir)) {
+      exec("cd $proj_dir; git symbolic-ref HEAD 2>/dev/null | cut -d\"/\" -f 3", $output_lines, $return_value);
+      if ($return_value == 0) {
+        return $output_lines[0];
+      }
+    }
+  }
+  
+  /**
+   * Get the GIT tag associated with the given file.
+   */
+  function git_deploy_get_tag($file) {
+    $version = '';
+    static $available = array();
+    $match = array();
+    if (empty($version)) {
+      // The .info file contains no version data. Find the version based
+      // on the sticky tag in the local workspace (the CVS/Tag file).
+      $proj_dir = dirname($file);
+      if (is_dir($proj_dir)) {
+        exec("cd $proj_dir; git describe --tags", $output_lines, $return_value);
+        if ($return_value == 0) {
+          $version = $output_lines;
+        }
+      }
+      /*
+      $git_dir = dirname($file) .'/.git';
+      if (is_dir($git_dir)) {
+        $tag = '';  // If there's no Tag file, there's no tag, a.k.a. HEAD.
+        if (file_exists($git_dir .'/Tag')) {
+          $tag_file = trim(file_get_contents($git_dir .'/Tag'));
+          if ($tag_file) {
+            // Get the sticky tag for this workspace: strip off the leading 'T'.
+            $tag = preg_replace('@^(T|N)@', '', $tag_file);
+          }
+        }
+        $version = $tag;
+      }
+      */
+    }
+    
+    if (empty($version)) {
+      $version = 'HEAD';
+    }
+
+    return $version;
+  }
+
+  function download() {
+    $dir = $this->get_destination();
+    $release_info = $this->download_link();
+
+    // TODO: Only delete if not a TAG.
+    if (file_exists($dir)) {
+      if ($this->is_git_tag($release_info['tag'])) {
+        return $dir;
+      }
+      else {
+        // This is not a GIT tag, so we need to re-download.
+        $this->remove_dir($dir);
+      }
+    }
+
+    if (hacked_git_checkout($release_info['giturl'], $release_info['module'], $dir, $release_info['checkout_folder'], $release_info['branch'], $release_info['tag'])) {
+      return $dir;
+    }
+
+    // Something went wrong:
+    return FALSE;
+  }
+
+  function get_destination() {
+    $type = $this->project->project_type;
+    $name = $this->project->name;
+    $info = $this->download_link();
+    // Add in the GIT tag here.
+    $version = $this->project->existing_version . '-' . $info['tag'];
+
+
+    $dir = $this->get_temp_directory() . "/$type/$name";
+    // Build the destination folder tree if it doesn't already exists.
+    if (!file_prepare_directory($dir, FILE_CREATE_DIRECTORY) && !mkdir($dir, 0775, TRUE)) {
+      watchdog('hacked', 'Failed to create temp directory: %dir', array('%dir' => $dir), WATCHDOG_ERROR);
+      return FALSE;
+    }
+    return "$dir/$version";
+  }
+  
+  function is_git_tag($tag) {
+    // TODO: Add tag validation
+    return TRUE;
+  }
 }
 
 /**

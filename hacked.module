@@ -224,7 +224,7 @@ function hacked_file_is_binary($file) {
  *
  * @see file_scan_directory().
  */
-function hacked_file_scan_directory($dir, $mask, $nomask = array('.', '..', 'CVS'), $callback = 0, $recurse = TRUE, $key = 'filename', $min_depth = 0, $depth = 0) {
+function hacked_file_scan_directory($dir, $mask, $nomask = array('.', '..', 'CVS', '.git'), $callback = 0, $recurse = TRUE, $key = 'filename', $min_depth = 0, $depth = 0) {
   $key = (in_array($key, array('filename', 'basename', 'name')) ? $key : 'filename');
   $files = array();
 
@@ -255,6 +255,81 @@ function hacked_file_scan_directory($dir, $mask, $nomask = array('.', '..', 'CVS
   }
 
   return $files;
+}
+
+/**
+ * Returns the version of the installed GIT executable on this machine
+ */
+function hacked_git_executable_get_version() {
+  $git_cmd = hacked_git_get_command();
+  // Run exec looking for the command:
+  $output_lines = array();
+  $return_value;
+  exec("$git_cmd --version", $output_lines, $return_value);
+  if ($return_value === 0) {
+    // We executed correctly, go looking for the version line:
+    $version = 'git';
+    
+    if (is_array($output_lines)) {
+      foreach ($output_lines as $line) {
+        if (strpos($line, 'version')) {
+          $version = str_replace('git version ', '', $line);
+          break;
+        }
+      }
+    }
+    return $version;
+  }
+  else {
+    return FALSE;
+  }
+}
+
+/**
+ * Will return TRUE if the git functions should be enabled.
+ */
+function hacked_git_enabled() {
+  $git_enabled = &drupal_static(__FUNCTION__);
+  if (is_null($git_enabled)) {
+    $git_enabled = module_exists('git_deploy') && (bool)hacked_git_executable_get_version();
+  }
+  return $git_enabled;
+}
+
+/**
+ * Helper function to return the command to run git on the command line.
+ */
+function hacked_git_get_command() {
+  return variable_get('hacked_git_cmd', 'git');
+}
+
+/**
+ * Checks out git repo to a temporary directory.
+ *
+ * @param $giturl
+ *   URL of the project.
+ * @param $folder
+ *   The module to check out from GIT.
+ * @param $checkout_location
+ *   The location in which to place the checkout.
+ * @param $tag
+ *   The tag to checkout, defaults to 'HEAD'.
+ * @return
+ *   Either FALSE on failure or the location of the checked out files.
+ */
+function hacked_git_checkout($giturl, $folder, $checkout_location, $checkout_folder, $branch, $tag = 'HEAD') {
+  $git_cmd = hacked_git_get_command();
+  $t = $checkout_location . '/' . $checkout_folder;
+  file_prepare_directory($checkout_location, FILE_CREATE_DIRECTORY);
+  file_prepare_directory($t, FILE_CREATE_DIRECTORY);
+//die("$giturl | $folder | $checkout_location | $checkout_folder | $tag");
+  exec("cd $checkout_location; $git_cmd clone --branch $branch http://git.drupal.org/project/" . $folder . ".git", $output_lines, $return_value);
+
+  if ($return_value == 0) {
+    return $t;
+  }
+
+  return FALSE;
 }
 
 /**
